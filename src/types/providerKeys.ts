@@ -6,5 +6,6 @@ export enum ProviderKey {
     MiniMax = 'minimax',
     MiniMaxCoding = 'minimax-coding',
     Kimi = 'kimi',
-    Compatible = 'compatible'
+    Compatible = 'compatible',
+    Zed = 'zed',
 }

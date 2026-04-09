@@ -3,7 +3,7 @@
     "publisher": "biebie99",
     "displayName": "Copilot Helper Pro",
     "description": "An extension that provides model support for GitHub Copilot Chat, including ZhipuAI, MiniMax, MoonshotAI, DeepSeek, Alibaba Cloud Bailian, and custom OpenAI/Anthropic compatible models.",
-    "version": "0.16.0",
+    "version": "0.17.0",
     "license": "MIT",
     "keywords": [
         "ai",
@@ -53,6 +53,7 @@
         "onLanguageModelProvider:chp.deepseek",
         "onLanguageModelProvider:chp.codex",
         "onLanguageModelProvider:chp.compatible",
+        "onLanguageModelProvider:chp.zed",
         "onLanguageModelTool:chp_zhipuWebSearch",
         "onLanguageModelTool:chp_minimaxWebSearch",
         "onFileSystem:chp-settings"
@@ -129,6 +130,15 @@
                     "light": "#5D6D7E",
                     "dark": "#34495E",
                     "highContrast": "#2E4053"
+                }
+            },
+            {
+                "id": "chp.statusBar.account.zed",
+                "description": "Account status bar background for Zed.",
+                "defaults": {
+                    "light": "#084994",
+                    "dark": "#0A3D6B",
+                    "highContrast": "#0D47A1"
                 }
             }
         ],
@@ -216,6 +226,16 @@
             {
                 "command": "chp.codex.selectWorkspace",
                 "title": "Codex - Select Workspace (Business/Personal)",
+                "category": "Copilot Helper Pro"
+            },
+            {
+                "command": "chp.zed.login",
+                "title": "Zed Login (Import from macOS Keychain)",
+                "category": "Copilot Helper Pro"
+            },
+            {
+                "command": "chp.zed.logout",
+                "title": "Zed Logout",
                 "category": "Copilot Helper Pro"
             },
             {
@@ -556,6 +576,11 @@
                 "vendor": "chp.codex",
                 "displayName": "⦿ Codex (OpenAI)",
                 "managementCommand": "chp.codex.login"
+            },
+            {
+                "vendor": "chp.zed",
+                "displayName": "⦿ Zed (macOS)",
+                "managementCommand": "chp.zed.login"
             }
         ],
         "languageModelTools": [
