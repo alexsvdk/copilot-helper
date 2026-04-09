@@ -44,6 +44,7 @@ export class AccountManagerPage {
     private static readonly providers: ProviderInfo[] = [
         { id: 'antigravity', name: 'Antigravity (Google)', authType: 'oauth' },
         { id: 'codex', name: 'Codex (OpenAI)', authType: 'oauth' },
+        ...(process.platform === 'darwin' ? [{ id: 'zed', name: 'Zed (macOS)', authType: 'oauth' as const }] : []),
         { id: 'zhipu', name: 'ZhipuAI', authType: 'apiKey' },
         { id: 'moonshot', name: 'MoonshotAI', authType: 'apiKey' },
         { id: 'minimax', name: 'MiniMax', authType: 'apiKey' },
@@ -434,6 +435,10 @@ export class AccountManagerPage {
                 // Import and call the Codex login function
                 const { doCodexLoginForNewAccount } = await import('../providers/codex/codexAuth.js');
                 await doCodexLoginForNewAccount();
+                this.refreshWebview();
+            } else if (provider === ProviderKey.Zed) {
+                // Zed — import credentials from macOS Keychain
+                await vscode.commands.executeCommand('chp.zed.login');
                 this.refreshWebview();
             }
         } catch (error) {

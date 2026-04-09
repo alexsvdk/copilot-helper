@@ -123,6 +123,7 @@ export class AccountUI {
         const providers = [
             { label: 'Antigravity (Google)', value: ProviderKey.Antigravity, authType: 'oauth' as const },
             { label: 'Codex (OpenAI)', value: ProviderKey.Codex, authType: 'oauth' as const },
+            ...(process.platform === 'darwin' ? [{ label: 'Zed (macOS Keychain)', value: ProviderKey.Zed, authType: 'oauth' as const }] : []),
             { label: 'ZhipuAI', value: ProviderKey.Zhipu, authType: 'apiKey' as const },
             { label: 'Moonshot', value: ProviderKey.Moonshot, authType: 'apiKey' as const },
             { label: 'MiniMax', value: ProviderKey.MiniMax, authType: 'apiKey' as const },
@@ -235,6 +236,14 @@ export class AccountUI {
             } catch (error) {
                 Logger.error('Codex OAuth login failed:', error);
                 vscode.window.showErrorMessage('Codex OAuth login failed. Please try again.');
+            }
+        } else if (provider === ProviderKey.Zed) {
+            // Zed — import credentials from macOS Keychain
+            try {
+                await vscode.commands.executeCommand('chp.zed.login');
+            } catch (error) {
+                Logger.error('Zed Keychain import failed:', error);
+                vscode.window.showErrorMessage('Zed login failed. Please try again.');
             }
         }
     }
