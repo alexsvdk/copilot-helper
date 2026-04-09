@@ -3,6 +3,7 @@ import { URL, URLSearchParams } from 'url';
 import * as vscode from 'vscode';
 import { configProviders } from '../config';
 import { ApiKeyManager } from '../../utils/apiKeyManager';
+import { Logger } from '../../utils';
 import { TokenResponse, UserInfo, AntigravityAuthResult, AntigravityModel, ModelQuickPickItem } from './types';
 import { ProviderKey } from '../../types/providerKeys';
 
@@ -325,7 +326,22 @@ async function doAntigravityLoginAndSave(isAddingNewAccount: boolean): Promise<v
         refreshToken: result.refreshToken,
         expiresAt: result.expiresAt
     };
+    // Build the key data shared by both paths. Stored BEFORE the account-manager event
+    // fires so that provideLanguageModelChatInformation already sees the filtered model list.
+    const keyData = JSON.stringify({
+        type: PROVIDER_KEY,
+        access_token: result.accessToken,
+        refresh_token: result.refreshToken,
+        email: result.email,
+        project_id: result.projectId,
+        expires_at: result.expiresAt,
+        timestamp: Date.now(),
+        models: models
+    });
     if (existingByEmail && !isAddingNewAccount) {
+        // Credential refresh for an existing account: persist key BEFORE updateCredentials
+        // so the account-change event sees the latest filtered model list.
+        await ApiKeyManager.setApiKey(PROVIDER_KEY, keyData);
         await accountManager.updateCredentials(existingByEmail.id, credentials);
     } else {
         const displayName = result.email
@@ -333,24 +349,15 @@ async function doAntigravityLoginAndSave(isAddingNewAccount: boolean): Promise<v
                 ? `${result.email} (${existingAccounts.length + 1})`
                 : result.email
             : `Antigravity Account ${existingAccounts.length + 1}`;
+        // Save the API key FIRST so that when addOAuthAccount fires the account-change
+        // event, provideLanguageModelChatInformation can already read the filtered model
+        // list from the key store instead of falling back to all hardcoded models.
+        await ApiKeyManager.setApiKey(PROVIDER_KEY, keyData);
         await accountManager.addOAuthAccount(PROVIDER_KEY, displayName, result.email || '', credentials, {
             projectId: result.projectId,
             models: models
         });
     }
-    await ApiKeyManager.setApiKey(
-        PROVIDER_KEY,
-        JSON.stringify({
-            type: PROVIDER_KEY,
-            access_token: result.accessToken,
-            refresh_token: result.refreshToken,
-            email: result.email,
-            project_id: result.projectId,
-            expires_at: result.expiresAt,
-            timestamp: Date.now(),
-            models: models
-        })
-    );
     const message = result.email
         ? `✅ Antigravity login successful! Authenticated as ${result.email}`
         : '✅ Antigravity login successful!';
@@ -358,9 +365,10 @@ async function doAntigravityLoginAndSave(isAddingNewAccount: boolean): Promise<v
     vscode.window.showInformationMessage(
         result.projectId ? `${message} (Project: ${result.projectId})${modelsInfo}` : `${message}${modelsInfo}`
     );
-    if (models.length > 0) {
-        await addAllAntigravityModelsToCompatible(models);
-    }
+    // NOTE: Models are no longer automatically added to the Compatible Provider.
+    // Antigravity models are served exclusively through the native AntigravityProvider,
+    // which prevents users from accidentally editing them as generic OpenAI-compatible entries.
+    Logger.debug(`[Antigravity] Login complete. ${models.length} model(s) available via native provider.`);
 }
 
 export async function antigravityLoginCommand(): Promise<void> {
@@ -534,15 +542,35 @@ export class AntigravityAuth {
             maxOutputTokens: m.maxOutputTokens,
             quotaInfo: undefined
         }));
-        const endpoints = ['daily-cloudcode-pa.sandbox.googleapis.com', 'cloudcode-pa.googleapis.com'];
+        // Priority: daily (non-sandbox) endpoint is most stable per anti-api experience
+        const endpoints = [
+            'daily-cloudcode-pa.googleapis.com',
+            'daily-cloudcode-pa.sandbox.googleapis.com',
+            'cloudcode-pa.googleapis.com'
+        ];
         let quotaMap = new Map<string, { remainingFraction?: number; resetTime?: string }>();
         for (const hostname of endpoints) {
+            Logger.debug(`[Antigravity] Fetching quota from ${hostname}`);
             quotaMap = await this.tryFetchQuotaFromEndpoint(accessToken, hostname);
             if (quotaMap.size > 0) {
+                Logger.debug(`[Antigravity] Got ${quotaMap.size} quota entries from ${hostname}`);
                 break;
             }
+            Logger.debug(`[Antigravity] No quota data from ${hostname}, trying next`);
         }
-        return hardcodedModels.map(model => ({ ...model, quotaInfo: quotaMap.get(model.id.toLowerCase()) }));
+        // When the API returned a non-empty model list, filter to only available models.
+        // Fall back to all hardcoded models when the quota fetch failed (quotaMap empty).
+        const availableModels = quotaMap.size > 0
+            ? hardcodedModels.filter(m => quotaMap.has(m.id.toLowerCase()))
+            : hardcodedModels;
+        if (quotaMap.size > 0) {
+            const hiddenCount = hardcodedModels.length - availableModels.length;
+            Logger.debug(`[Antigravity] Available models for this account: ${availableModels.map(m => m.id).join(', ')}`);
+            if (hiddenCount > 0) {
+                Logger.debug(`[Antigravity] Hiding ${hiddenCount} model(s) not returned by fetchAvailableModels`);
+            }
+        }
+        return availableModels.map(model => ({ ...model, quotaInfo: quotaMap.get(model.id.toLowerCase()) }));
     }
 
     private static async tryFetchQuotaFromEndpoint(
@@ -573,10 +601,12 @@ export class AntigravityAuth {
             for (const originalName of Object.keys(data.models)) {
                 const aliasName = modelName2Alias(originalName);
                 const modelData = data.models[originalName];
-                if (aliasName && modelData?.quotaInfo) {
+                // Track ALL models present in the API response, not just those with quotaInfo.
+                // Presence in the map signals that the model exists for this account.
+                if (aliasName) {
                     quotaMap.set(aliasName.toLowerCase(), {
-                        remainingFraction: modelData.quotaInfo.remainingFraction,
-                        resetTime: modelData.quotaInfo.resetTime
+                        remainingFraction: modelData.quotaInfo?.remainingFraction,
+                        resetTime: modelData.quotaInfo?.resetTime
                     });
                 }
             }
@@ -600,7 +630,15 @@ export class AntigravityAuth {
             const authData = JSON.parse(stored) as { models?: AntigravityModel[] };
             const cachedModels = authData.models || [];
             const antigravityConfig = configProviders[PROVIDER_KEY];
-            return antigravityConfig.models.map(m => {
+            // Filter config models to only those present in the stored list.
+            // fetchModels() applies quota-based filtering before storing, so cached
+            // models already represent what the API reported as available for this account.
+            // Fallback: if nothing is cached yet, show all config models.
+            const cachedIds = new Set(cachedModels.map(cm => cm.id.toLowerCase()));
+            const configModels = cachedIds.size > 0
+                ? antigravityConfig.models.filter(m => cachedIds.has(m.id.toLowerCase()))
+                : antigravityConfig.models;
+            return configModels.map(m => {
                 const cached = cachedModels.find(cm => cm.id.toLowerCase() === m.id.toLowerCase());
                 return {
                     id: m.id,

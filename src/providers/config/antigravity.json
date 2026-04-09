@@ -1,12 +1,12 @@
 {
     "displayName": "Antigravity (Google Cloud Code)",
-    "baseUrl": "https://api.antigravity.com/v1",
+    "baseUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal",
     "apiKeyTemplate": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "models": [
         {
             "id": "claude-opus-4-5-thinking",
             "name": "Claude Opus 4.5 Thinking",
-            "tooltip": "Claude Opus 4.5 với khả năng suy luận mở rộng",
+            "tooltip": "Claude Opus 4.5 with extended reasoning",
             "sdkMode": "anthropic",
             "maxInputTokens": 200000,
             "maxOutputTokens": 64000,
@@ -19,7 +19,7 @@
         {
             "id": "claude-sonnet-4-5",
             "name": "Claude Sonnet 4.5",
-            "tooltip": "Claude Sonnet 4.5 - mô hình cân bằng giữa hiệu suất và chi phí",
+            "tooltip": "Claude Sonnet 4.5 - balanced performance and speed",
             "sdkMode": "anthropic",
             "maxInputTokens": 200000,
             "maxOutputTokens": 8192,
@@ -31,7 +31,20 @@
         {
             "id": "claude-sonnet-4-5-thinking",
             "name": "Claude Sonnet 4.5 Thinking",
-            "tooltip": "Claude Sonnet 4.5 với khả năng suy luận mở rộng",
+            "tooltip": "Claude Sonnet 4.5 with extended reasoning",
+            "sdkMode": "anthropic",
+            "maxInputTokens": 200000,
+            "maxOutputTokens": 64000,
+            "includeThinking": true,
+            "capabilities": {
+                "toolCalling": true,
+                "imageInput": true
+            }
+        },
+        {
+            "id": "claude-opus-4-6-thinking",
+            "name": "Claude Opus 4.6 Thinking",
+            "tooltip": "Claude Opus 4.6 - most capable with extended reasoning",
             "sdkMode": "anthropic",
             "maxInputTokens": 200000,
             "maxOutputTokens": 64000,
@@ -44,7 +57,7 @@
         {
             "id": "gemini-3-flash",
             "name": "Gemini 3 Flash",
-            "tooltip": "Gemini 3 Flash - mô hình nhanh và hiệu quả",
+            "tooltip": "Gemini 3 Flash - fast and efficient",
             "sdkMode": "anthropic",
             "maxInputTokens": 1000000,
             "maxOutputTokens": 8192,
@@ -54,9 +67,9 @@
             }
         },
         {
-            "id": "gemini-3-pro-high",
-            "name": "Gemini 3 Pro High",
-            "tooltip": "Gemini 3 Pro với chế độ chất lượng cao",
+            "id": "gemini-3.1-pro-high",
+            "name": "Gemini 3.1 Pro High",
+            "tooltip": "Gemini 3.1 Pro - high quality mode",
             "sdkMode": "anthropic",
             "maxInputTokens": 2000000,
             "maxOutputTokens": 32768,
@@ -66,9 +79,9 @@
             }
         },
         {
-            "id": "gemini-3-pro-image",
-            "name": "Gemini 3 Pro Image",
-            "tooltip": "Gemini 3 Pro tối ưu cho xử lý hình ảnh",
+            "id": "gemini-3.1-pro-image",
+            "name": "Gemini 3.1 Pro Image",
+            "tooltip": "Gemini 3.1 Pro - optimised for image processing",
             "sdkMode": "anthropic",
             "maxInputTokens": 2000000,
             "maxOutputTokens": 8192,
@@ -78,9 +91,9 @@
             }
         },
         {
-            "id": "gemini-3-pro-low",
-            "name": "Gemini 3 Pro Low",
-            "tooltip": "Gemini 3 Pro với chế độ tiết kiệm chi phí",
+            "id": "gemini-3.1-pro-low",
+            "name": "Gemini 3.1 Pro Low",
+            "tooltip": "Gemini 3.1 Pro - cost-efficient mode",
             "sdkMode": "anthropic",
             "maxInputTokens": 2000000,
             "maxOutputTokens": 8192,
@@ -92,7 +105,7 @@
         {
             "id": "gpt-oss-120b-medium",
             "name": "GPT OSS 120B Medium",
-            "tooltip": "GPT Open Source 120B - mô hình mã nguồn mở",
+            "tooltip": "GPT Open Source 120B - open-source model",
             "sdkMode": "anthropic",
             "maxInputTokens": 128000,
             "maxOutputTokens": 8192,
