@@ -103,15 +103,19 @@ export class AntigravityProvider extends GenericModelProvider implements Languag
                 // Find override for this model
                 const override = modelOverrides.find(o => o.id === m.id);
 
+                // sdkMode MUST NOT be 'openai' for Antigravity models: the native Antigravity
+                // endpoint returns Gemini-format SSE, which must be parsed by AntigravityStreamProcessor.
+                // 'anthropic' routes to AntigravityStreamProcessor (else-branch in streamRequest).
                 const baseConfig: ModelConfig = {
                     id: m.id,
                     name: m.displayName || m.name,
                     tooltip: `${m.displayName} - Antigravity`,
                     maxInputTokens: m.maxTokens || 200000,
                     maxOutputTokens: override?.maxOutputTokens || m.maxOutputTokens || 8192,
-                    sdkMode: 'openai' as const,
+                    sdkMode: 'anthropic' as const,
                     capabilities: { toolCalling: true, imageInput: true }
                 };
+                Logger.debug(`[Antigravity] Model config: id=${m.id} sdkMode=anthropic maxOutput=${baseConfig.maxOutputTokens}`);
 
                 // Apply extraBody from override if present
                 if (override?.extraBody) {

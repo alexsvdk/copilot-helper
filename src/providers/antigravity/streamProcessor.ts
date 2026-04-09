@@ -2,10 +2,12 @@ import * as vscode from 'vscode';
 import type { ModelConfig } from '../../types/sharedTypes';
 import { ProcessStreamOptions } from '../common/commonTypes';
 import { storeThoughtSignature, extractToolCallFromGeminiResponse } from './handler';
+import { Logger } from '../../utils';
 
 export class AntigravityStreamProcessor {
     private textBuffer = '';
     private textBufferLastFlush = 0;
+    private totalTextEmitted = 0; // tracks total chars emitted as LanguageModelTextPart
     private thinkingBuffer = '';
     private currentThinkingId: string | null = null;
     private seenToolCalls = new Set<string>();
@@ -82,8 +84,35 @@ export class AntigravityStreamProcessor {
         } finally {
             this.stopActivityReporting();
             this.processRemainingBuffer(buffer, modelConfig, progress);
+            // Flush any text held back by the '<thinking>' tag lookahead buffer.
+            if (this.thinkingTagBuffer.length > 0) {
+                Logger.debug(`[Antigravity] Flushing thinkingTagBuffer remainder: ${this.thinkingTagBuffer.length} chars`);
+                this.textBuffer += this.thinkingTagBuffer;
+                this.thinkingTagBuffer = '';
+            }
             this.flushTextBuffer(progress, true);
-            this.flushPendingToolCallsImmediate(progress); // Flush tất cả tool calls còn lại
+            this.flushPendingToolCallsImmediate(progress);
+
+            // If no text at all was emitted during this stream (e.g. GPT OSS 120B returns
+            // its final answer entirely as thought:true parts), convert the accumulated
+            // thinking content into a text response so VS Code does not show
+            // "Sorry, no response was returned."
+            if (this.totalTextEmitted === 0) {
+                if (this.thinkingFlushInterval) {
+                    clearInterval(this.thinkingFlushInterval);
+                    this.thinkingFlushInterval = null;
+                }
+                const pendingThinking = this.thinkingBuffer + this.thinkingQueue;
+                if (pendingThinking.length > 0) {
+                    Logger.debug(`[Antigravity] No text emitted; converting ${pendingThinking.length} chars of thinking to text (thought-only response)`);
+                    this.thinkingBuffer = '';
+                    this.thinkingQueue = '';
+                    this.currentThinkingId = null;
+                    progress.report(new vscode.LanguageModelTextPart(pendingThinking));
+                    return;
+                }
+            }
+
             this.finalizeThinkingPart(progress);
         }
     }
@@ -390,10 +419,12 @@ export class AntigravityStreamProcessor {
             this.textBuffer.length > 0 &&
             (force || this.textBuffer.length >= AntigravityStreamProcessor.TEXT_BUFFER_MIN_SIZE)
         ) {
+            Logger.debug(`[Antigravity] Emitting text token: ${this.textBuffer.length} chars`);
+            this.totalTextEmitted += this.textBuffer.length;
             progress.report(new vscode.LanguageModelTextPart(this.textBuffer));
             this.textBuffer = '';
             this.textBufferLastFlush = Date.now();
-            this.markActivity(); // Đánh dấu activity khi flush
+            this.markActivity();
         }
     }
 

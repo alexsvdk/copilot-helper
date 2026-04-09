@@ -291,7 +291,7 @@ export class AntigravityStatusBar extends ProviderStatusBarItem<AntigravityQuota
                     if (fraction < geminiMinQuota) {
                         geminiMinQuota = fraction;
                     }
-                    if (modelIdLower.includes('gemini-3-pro')) {
+                    if (modelIdLower.includes('gemini-3.1-pro')) {
                         gemini3ProQuota = fraction;
                     }
                 } else if (modelIdLower.includes('claude')) {

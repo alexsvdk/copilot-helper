@@ -49,19 +49,46 @@ const GEMINI_UNSUPPORTED_FIELDS = new Set([
     'not',
     'strict',
     'input_examples',
-    'examples'
+    'examples',
+    'const',
+    // Additional fields rejected by Gemini v1internal (sourced from anti-api json-schema-cleaner)
+    'enumDescriptions',
+    'enumCaseInsensitive',
+    'enumNormalizeWhitespace',
+    'default',
+    'deprecated',
+    'readOnly',
+    'writeOnly',
+    'format',
+    'cache_control',
+    'propertyNames',
 ]);
 
 const MODEL_ALIASES: Record<string, string> = {
+    // Gemini model aliases
     'gemini-2.5-computer-use-preview-10-2025': 'rev19-uic3-1p',
-    'gemini-3-pro-image-preview': 'gemini-3-pro-image',
-    'gemini-3-pro-preview': 'gemini-3-pro-high',
+    'gemini-3.1-pro-image-preview': 'gemini-3.1-pro-image',
+    'gemini-3.1-pro-preview': 'gemini-3.1-pro-high',
+    // Claude Sonnet 4.5 - both dash and dot notation
     'gemini-claude-sonnet-4-5': 'claude-sonnet-4-5',
     'claude-sonnet-4-5': 'claude-sonnet-4-5',
+    'claude-sonnet-4.5': 'claude-sonnet-4-5',
+    'claude-sonnet-4-5-20251001': 'claude-sonnet-4-5',
+    // Claude Sonnet 4.5 Thinking
     'gemini-claude-sonnet-4-5-thinking': 'claude-sonnet-4-5-thinking',
     'claude-sonnet-4-5-thinking': 'claude-sonnet-4-5-thinking',
+    'claude-sonnet-4.5-thinking': 'claude-sonnet-4-5-thinking',
+    // Claude Opus 4.5 Thinking
     'gemini-claude-opus-4-5-thinking': 'claude-opus-4-5-thinking',
-    'claude-opus-4-5-thinking': 'claude-opus-4-5-thinking'
+    'claude-opus-4-5-thinking': 'claude-opus-4-5-thinking',
+    'claude-opus-4.5-thinking': 'claude-opus-4-5-thinking',
+    // Claude Opus 4.6 - always maps to the thinking variant (same as anti-api)
+    'claude-opus-4-6': 'claude-opus-4-6-thinking',
+    'claude-opus-4-6-thinking': 'claude-opus-4-6-thinking',
+    'claude-opus-4.6': 'claude-opus-4-6-thinking',
+    'claude-opus-4.6-thinking': 'claude-opus-4-6-thinking',
+    // GPT OSS - the API expects the "medium" suffix
+    'gpt-oss-120b': 'gpt-oss-120b-medium'
 };
 
 export function aliasToModelName(modelName: string): string {

@@ -3,17 +3,33 @@ import * as vscode from 'vscode';
 import { AccountQuotaCache } from '../../accounts/accountQuotaCache';
 import type { ModelConfig } from '../../types/sharedTypes';
 import { ConfigManager } from '../../utils/configManager';
+import { Logger } from '../../utils';
 import { QuotaNotificationManager } from '../../utils/quotaNotificationManager';
 import { OpenAIStreamProcessor } from '../openai/openaiStreamProcessor';
 import { AntigravityAuth } from './auth';
 import { AntigravityStreamProcessor } from './streamProcessor';
 import { ErrorCategory, RateLimitAction, QuotaState, GeminiContent, AntigravityPayload, GeminiRequest } from './types';
 
+/**
+ * Thrown when a stream error occurs AFTER the HTTP 200 response has been received.
+ * Prevents the URL-fallback retry loop from sending a second request to another endpoint,
+ * which would replay tool calls and cause duplicates in the Copilot UI.
+ */
+export class StreamingStartedError extends Error {
+    constructor(cause: unknown) {
+        super(cause instanceof Error ? cause.message : String(cause));
+        this.name = 'StreamingStartedError';
+    }
+}
+
+// URL priority: daily (non-sandbox) is the most stable and up-to-date endpoint.
+// Sandbox is a fallback, production non-daily is last resort.
 export const DEFAULT_BASE_URLS = [
+    'https://daily-cloudcode-pa.googleapis.com',
     'https://daily-cloudcode-pa.sandbox.googleapis.com',
     'https://cloudcode-pa.googleapis.com'
 ];
-export const DEFAULT_USER_AGENT = 'antigravity/1.11.5';
+export const DEFAULT_USER_AGENT = 'antigravity/1.22.2';
 const RATE_LIMIT_MAX_RETRIES = 5;
 const RATE_LIMIT_BASE_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 30000;
@@ -68,7 +84,19 @@ const GEMINI_UNSUPPORTED_FIELDS = new Set([
     'not',
     'strict',
     'input_examples',
-    'examples'
+    'examples',
+    'const',
+    // Additional fields rejected by Gemini v1internal (sourced from anti-api json-schema-cleaner)
+    'enumDescriptions',
+    'enumCaseInsensitive',
+    'enumNormalizeWhitespace',
+    'default',
+    'deprecated',
+    'readOnly',
+    'writeOnly',
+    'format',
+    'cache_control',
+    'propertyNames',
 ]);
 
 const thoughtSignatureStore = new Map<string, string>();
@@ -524,15 +552,30 @@ class MessageConverter {
 class FromIRTranslator {
     private readonly messageConverter = new MessageConverter();
     private readonly MODEL_ALIASES: Record<string, string> = {
+        // Gemini model aliases
         'gemini-2.5-computer-use-preview-10-2025': 'rev19-uic3-1p',
-        'gemini-3-pro-image-preview': 'gemini-3-pro-image',
-        'gemini-3-pro-preview': 'gemini-3-pro-high',
+        'gemini-3.1-pro-image-preview': 'gemini-3.1-pro-image',
+        'gemini-3.1-pro-preview': 'gemini-3.1-pro-high',
+        // Claude Sonnet 4.5
         'gemini-claude-sonnet-4-5': 'claude-sonnet-4-5',
         'claude-sonnet-4-5': 'claude-sonnet-4-5',
+        'claude-sonnet-4.5': 'claude-sonnet-4-5',
+        'claude-sonnet-4-5-20251001': 'claude-sonnet-4-5',
+        // Claude Sonnet 4.5 Thinking
         'gemini-claude-sonnet-4-5-thinking': 'claude-sonnet-4-5-thinking',
         'claude-sonnet-4-5-thinking': 'claude-sonnet-4-5-thinking',
+        'claude-sonnet-4.5-thinking': 'claude-sonnet-4-5-thinking',
+        // Claude Opus 4.5 Thinking
         'gemini-claude-opus-4-5-thinking': 'claude-opus-4-5-thinking',
-        'claude-opus-4-5-thinking': 'claude-opus-4-5-thinking'
+        'claude-opus-4-5-thinking': 'claude-opus-4-5-thinking',
+        'claude-opus-4.5-thinking': 'claude-opus-4-5-thinking',
+        // Claude Opus 4.6 - always maps to thinking variant (same behaviour as anti-api)
+        'claude-opus-4-6': 'claude-opus-4-6-thinking',
+        'claude-opus-4-6-thinking': 'claude-opus-4-6-thinking',
+        'claude-opus-4.6': 'claude-opus-4-6-thinking',
+        'claude-opus-4.6-thinking': 'claude-opus-4-6-thinking',
+        // GPT OSS
+        'gpt-oss-120b': 'gpt-oss-120b-medium'
     };
 
     aliasToModelName(modelName: string): string {
@@ -662,15 +705,18 @@ export class AntigravityHandler {
     ): Promise<void> {
         const authToken = accessToken || (await AntigravityAuth.getAccessToken());
         if (!authToken) {
+            Logger.error('[Antigravity] handleRequest: no auth token, aborting');
             throw new Error('Not logged in to Antigravity. Please login first.');
         }
         const requestModel = modelConfig.model || model.id;
         const resolvedModel = this.fromIRTranslator.aliasToModelName(requestModel);
         const effectiveAccountId = accountId || 'default-antigravity';
         const quotaKey = `${effectiveAccountId}:${resolvedModel}`;
+        Logger.debug(`[Antigravity] handleRequest: model=${resolvedModel} account=${effectiveAccountId} sdkMode=${modelConfig.sdkMode || 'default'}`);
 
         if (this.quotaManager.isInCooldown(quotaKey)) {
             const remaining = this.quotaManager.getRemainingCooldown(quotaKey);
+            Logger.debug(`[Antigravity] Model ${resolvedModel} in quota cooldown, ${remaining}ms remaining`);
             if (remaining > 5000) {
                 this.quotaNotificationManager.notifyQuotaExceeded(
                     remaining,
@@ -719,6 +765,7 @@ export class AntigravityHandler {
         const baseUrls = modelConfig.baseUrl
             ? [modelConfig.baseUrl.replace(/\/v1internal\/?$/, '')]
             : [...DEFAULT_BASE_URLS];
+        Logger.debug(`[Antigravity] Will try ${baseUrls.length} endpoint(s): ${baseUrls.join(', ')}`);
         const abortController = new AbortController();
         const cancelListener = token.onCancellationRequested(() => abortController.abort());
         const retrier = new RateLimitRetrier();
@@ -730,6 +777,7 @@ export class AntigravityHandler {
         try {
             for (let idx = 0; idx < baseUrls.length; idx++) {
                 const url = `${baseUrls[idx].replace(/\/$/, '')}/v1internal:streamGenerateContent?alt=sse`;
+                Logger.debug(`[Antigravity] Attempt ${idx + 1}/${baseUrls.length}: ${url}`);
                 if (token.isCancellationRequested) {
                     throw new vscode.CancellationError();
                 }
@@ -744,6 +792,7 @@ export class AntigravityHandler {
                         abortController
                     );
                     if (result.success) {
+                        Logger.debug(`[Antigravity] Request succeeded on endpoint ${idx + 1}`);
                         this.quotaManager.clearQuotaExceeded(quotaKey);
                         this.quotaNotificationManager.clearQuotaCountdown();
                         this.debouncedCacheUpdate(
@@ -846,6 +895,12 @@ export class AntigravityHandler {
                     if (error instanceof vscode.CancellationError) {
                         throw error;
                     }
+                    // If streaming already started, do NOT retry — replaying the request to another
+                    // endpoint would cause tool calls to be reported twice in the Copilot UI.
+                    if (error instanceof StreamingStartedError) {
+                        Logger.warn('[Antigravity] Stream error after data received — not retrying to prevent tool call duplication');
+                        throw error;
+                    }
                     if (
                         error instanceof Error &&
                         (error.message.startsWith('Quota exceeded') ||
@@ -858,6 +913,7 @@ export class AntigravityHandler {
                     lastStatus = 0;
                     lastBody = '';
                     lastError = error instanceof Error ? error : new Error(String(error));
+                    Logger.debug(`[Antigravity] Endpoint ${idx + 1} threw non-HTTP error: ${lastError.message}`);
                     if (idx + 1 < baseUrls.length) {
                         continue;
                     }
@@ -888,6 +944,8 @@ export class AntigravityHandler {
         abortController: AbortController
     ): Promise<{ success: boolean; status?: number; statusText?: string; body?: string }> {
         let response: Response;
+        Logger.debug(`[Antigravity] streamRequest → POST ${url} (model: ${payload.model})`);
+        const startTime = Date.now();
         try {
             response = await fetch(url, {
                 method: 'POST',
@@ -902,23 +960,41 @@ export class AntigravityHandler {
             });
         } catch (error) {
             if (token.isCancellationRequested || abortController.signal.aborted) {
+                Logger.debug('[Antigravity] streamRequest cancelled by user');
                 throw new vscode.CancellationError();
             }
+            Logger.error('[Antigravity] streamRequest fetch error:', error);
             throw error;
         }
         if (!response.ok) {
+            const body = await response.text();
+            Logger.warn(`[Antigravity] streamRequest HTTP ${response.status} from ${url}: ${body.slice(0, 300)}`);
             return {
                 success: false,
                 status: response.status,
                 statusText: response.statusText,
-                body: await response.text()
+                body
             };
         }
-        if (modelConfig.sdkMode === 'openai' || modelConfig.sdkMode === 'openai-sse') {
-            await new OpenAIStreamProcessor().processStream({ response, modelConfig, progress, token });
-        } else {
-            await new AntigravityStreamProcessor().processStream({ response, modelConfig, progress, token });
+        Logger.debug(`[Antigravity] streamRequest HTTP 200 from ${url} (${Date.now() - startTime}ms), sdkMode: ${modelConfig.sdkMode || 'default→antigravity'}`);
+        // Streaming is about to start — wrap any subsequent errors in StreamingStartedError
+        // so the caller's fallback loop knows NOT to retry (which would replay tool calls).
+        try {
+            if (modelConfig.sdkMode === 'openai' || modelConfig.sdkMode === 'openai-sse') {
+                Logger.debug('[Antigravity] Using OpenAI stream processor');
+                await new OpenAIStreamProcessor().processStream({ response, modelConfig, progress, token });
+            } else {
+                Logger.debug('[Antigravity] Using Antigravity stream processor');
+                await new AntigravityStreamProcessor().processStream({ response, modelConfig, progress, token });
+            }
+        } catch (streamError) {
+            if (streamError instanceof vscode.CancellationError) {
+                throw streamError;
+            }
+            Logger.error('[Antigravity] Stream processing error (will not retry to avoid tool call duplication):', streamError);
+            throw new StreamingStartedError(streamError);
         }
+        Logger.debug(`[Antigravity] streamRequest completed in ${Date.now() - startTime}ms`);
         return { success: true };
     }
 
@@ -931,11 +1007,13 @@ export class AntigravityHandler {
         }
         this.projectIdPromise = AntigravityAuth.ensureProjectId(accessToken)
             .then(projectId => {
+                Logger.debug(`[Antigravity] Project ID resolved: ${projectId ? projectId.substring(0, 20) + '...' : '(empty)'}`);
                 this.projectIdCache = projectId;
                 this.projectIdPromise = null;
                 return projectId;
             })
             .catch(err => {
+                Logger.error('[Antigravity] Failed to resolve project ID:', err);
                 this.projectIdPromise = null;
                 throw err;
             });
