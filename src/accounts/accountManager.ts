@@ -45,6 +45,7 @@ export class AccountManager {
     private static providerConfigs: Map<string, ProviderAccountConfig> = new Map([
         [ProviderKey.Antigravity, { supportsMultiAccount: true, supportsOAuth: true, supportsApiKey: false }],
         [ProviderKey.Codex, { supportsMultiAccount: true, supportsOAuth: true, supportsApiKey: true }],
+        [ProviderKey.Zed, { supportsMultiAccount: false, supportsOAuth: true, supportsApiKey: false }],
         [ProviderKey.Zhipu, { supportsMultiAccount: true, supportsOAuth: false, supportsApiKey: true }],
         [ProviderKey.Moonshot, { supportsMultiAccount: true, supportsOAuth: false, supportsApiKey: true }],
         [ProviderKey.MiniMax, { supportsMultiAccount: true, supportsOAuth: false, supportsApiKey: true }],

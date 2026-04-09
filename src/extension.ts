@@ -7,6 +7,7 @@ import { CompatibleProvider } from './providers/compatible/compatibleProvider';
 import { ProviderKey } from './types/providerKeys';
 import { AntigravityProvider } from './providers/antigravity/provider';
 import { CodexProvider } from './providers/codex/codexProvider';
+import { ZedProvider } from './providers/zed/zedProvider';
 import { InlineCompletionShim } from './copilot/inlineCompletionShim';
 import {
     Logger,
@@ -309,6 +310,17 @@ export async function activate(context: vscode.ExtensionContext) {
         registeredProviders[ProviderKey.Codex] = codexResult.provider;
         registeredDisposables.push(...codexResult.disposables);
         Logger.trace(`⏱️ Codex Provider registered (time: ${Date.now() - stepStartTime}ms)`);
+
+        // Step 4.3: Activate Zed Provider (macOS only)
+        if (process.platform === 'darwin') {
+            stepStartTime = Date.now();
+            const zedResult = ZedProvider.createAndActivate(context);
+            registeredProviders[ProviderKey.Zed] = zedResult.provider;
+            registeredDisposables.push(...zedResult.disposables);
+            Logger.trace(`⏱️ Zed Provider registered (time: ${Date.now() - stepStartTime}ms)`);
+        } else {
+            Logger.info('Zed Provider skipped (macOS only)');
+        }
 
         // Step 5: Register inline completion provider (lightweight Shim, lazy load the actual completion engine)
         stepStartTime = Date.now();
