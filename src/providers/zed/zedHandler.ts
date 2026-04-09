@@ -315,6 +315,7 @@ function buildOpenAiChatRequest(
         model: model.id,
         stream: true,
         max_tokens: maxTokens || undefined,
+        temperature: 1,
         messages: openaiMessages,
         tools: openaiTools.length > 0 ? openaiTools : undefined,
         parallel_tool_calls: model.supports_parallel_tool_calls === true,

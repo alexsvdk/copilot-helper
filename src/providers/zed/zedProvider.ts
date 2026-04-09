@@ -49,9 +49,14 @@ export class ZedProvider extends GenericModelProvider implements LanguageModelCh
 
         // Fire an initial model-change event so VS Code picks up models on startup
         setTimeout(() => {
-            ZedAuth.isLoggedIn().then(loggedIn => {
+            ZedAuth.isLoggedIn().then(async loggedIn => {
                 if (loggedIn) {
                     Logger.info('[Zed] User is logged in, firing model change event');
+                    // Ensure existing account is registered in AccountManager (e.g. after upgrade)
+                    const account = await ZedAuth.getAccount();
+                    if (account) {
+                        await ZedAuth.saveAccount(account);
+                    }
                     provider._onDidChangeLanguageModelChatInformation.fire();
                 }
             }).catch(() => undefined);

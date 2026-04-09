@@ -170,9 +170,38 @@ export class ZedAuth {
                 account.organizationId || ''
             ),
         ]);
+
+        // Register / refresh in AccountManager so the account appears in the UI
+        try {
+            const { AccountManager } = await import('../../accounts/accountManager.js');
+            const accountManager = AccountManager.getInstance();
+            const existing = accountManager.getAccountsByProvider('zed');
+            const oauthCreds = { accessToken: account.accessToken, refreshToken: '', expiresAt: '' };
+            const displayName = account.label && account.label !== account.login
+                ? `${account.label} (${account.login})`
+                : account.login;
+            if (existing.length > 0) {
+                await accountManager.updateCredentials(existing[0].id, oauthCreds);
+            } else {
+                await accountManager.addOAuthAccount('zed', displayName, account.login, oauthCreds);
+            }
+        } catch (_e) {
+            // AccountManager sync is best-effort; Zed provider uses its own SecretStorage
+        }
     }
 
     static async logout(): Promise<void> {
+        // Remove from AccountManager first
+        try {
+            const { AccountManager } = await import('../../accounts/accountManager.js');
+            const accountManager = AccountManager.getInstance();
+            for (const acc of accountManager.getAccountsByProvider('zed')) {
+                await accountManager.removeAccount(acc.id);
+            }
+        } catch (_e) {
+            // best-effort
+        }
+
         await Promise.all([
             ZedAuth.context.secrets.delete(STORAGE_KEY_ID),
             ZedAuth.context.secrets.delete(STORAGE_KEY_LOGIN),
